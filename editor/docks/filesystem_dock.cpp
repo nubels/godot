@@ -839,6 +839,13 @@ bool FileSystemDock::_update_filtered_items(TreeItem *p_tree_item) {
 	}
 
 	if (keep_visible) {
+		String path = item->get_metadata(0);
+		if (path.begins_with("res://addons")) {
+			keep_visible = false;
+		}
+	}
+
+	if (keep_visible) {
 		item->set_collapsed(false);
 	} else {
 		// res:// and favorites are always visible.
@@ -1901,6 +1908,7 @@ void FileSystemDock::_duplicate_operation_confirm(const String &p_path) {
 		}
 	}
 	_try_duplicate_item(to_duplicate, p_path);
+	callable_mp(this, &FileSystemDock::_select_file).call_deferred(p_path, false, true);
 }
 
 void FileSystemDock::_move_confirm() {
