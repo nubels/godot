@@ -2278,7 +2278,7 @@ static String _get_dropped_resource_as_member(const Ref<Resource> &p_resource, b
 		}
 	}
 
-	return vformat("var %s: %s:\n\tget:\n\t\treturn load(%s)", variable_name, type_name, _quote_drop_data(path));
+	return vformat("static var %s: %s:\n\tget:\n\t\treturn load(%s)", variable_name, type_name, _quote_drop_data(path));
 }
 
 String ScriptTextEditor::_get_dropped_resource_as_exported_member(const Ref<Resource> &p_resource, const Vector<ObjectID> &p_script_instance_obj_ids) {
