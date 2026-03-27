@@ -1,0 +1,268 @@
+name: 🔐 Encrypted Editor & Templates
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build-linux:
+    name: Linux (editor + encrypted templates)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+    steps:
+      - name: Validate encryption key secret
+        shell: bash
+        run: |
+          if [ -z "${SCRIPT_AES256_ENCRYPTION_KEY}" ]; then
+            echo "::error::Missing secret SCRIPT_AES256_ENCRYPTION_KEY (must be 64 hex chars)."
+            exit 1
+          fi
+          if ! [[ "${SCRIPT_AES256_ENCRYPTION_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::SCRIPT_AES256_ENCRYPTION_KEY must be a 256-bit key in hex format (64 chars)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-bin
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Build editor and templates
+        shell: bash
+        run: |
+          scons platform=linuxbsd arch=x86_64 target=editor dev_mode=yes module_text_server_fb_enabled=yes accesskit=no
+          scons platform=linuxbsd arch=x86_64 target=template_debug dev_mode=yes module_text_server_fb_enabled=yes accesskit=no
+          scons platform=linuxbsd arch=x86_64 target=template_release dev_mode=yes module_text_server_fb_enabled=yes accesskit=no
+
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts/linux
+          cp ./bin/godot.linuxbsd.editor.x86_64 artifacts/linux/
+          cp ./bin/godot.linuxbsd.template_debug.x86_64 artifacts/linux/
+          cp ./bin/godot.linuxbsd.template_release.x86_64 artifacts/linux/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-linux
+          path: artifacts/linux/
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows (editor + encrypted templates)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+      SCONS_CACHE_MSVC_CONFIG: true
+      PYTHONIOENCODING: utf8
+      angle_libs: ${{ github.workspace }}/
+    steps:
+      - name: Validate encryption key secret
+        shell: bash
+        run: |
+          if [ -z "${SCRIPT_AES256_ENCRYPTION_KEY}" ]; then
+            echo "::error::Missing secret SCRIPT_AES256_ENCRYPTION_KEY (must be 64 hex chars)."
+            exit 1
+          fi
+          if ! [[ "${SCRIPT_AES256_ENCRYPTION_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::SCRIPT_AES256_ENCRYPTION_KEY must be a 256-bit key in hex format (64 chars)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Download pre-built ANGLE static libraries
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-angle-static
+          version: tags/chromium/6601.2
+          file: godot-angle-static-x86_64-msvc-release.zip
+          target: angle/angle.zip
+
+      - name: Extract pre-built ANGLE static libraries
+        run: Expand-Archive -Force angle/angle.zip ${{ github.workspace }}/
+
+      - name: Build editor and templates
+        shell: bash
+        run: |
+          scons platform=windows arch=x86_64 target=editor dev_mode=yes module_text_server_fb_enabled=yes debug_symbols=no windows_subsystem=console d3d12=no accesskit=no
+          scons platform=windows arch=x86_64 target=template_debug dev_mode=yes module_text_server_fb_enabled=yes debug_symbols=no windows_subsystem=console d3d12=no accesskit=no
+          scons platform=windows arch=x86_64 target=template_release dev_mode=yes module_text_server_fb_enabled=yes debug_symbols=no windows_subsystem=console d3d12=no accesskit=no
+
+      - name: Prepare artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts/windows -Force | Out-Null
+          Copy-Item ./bin/godot.windows.editor.x86_64.exe artifacts/windows/
+          Copy-Item ./bin/godot.windows.template_debug.x86_64.console.exe artifacts/windows/
+          Copy-Item ./bin/godot.windows.template_release.x86_64.console.exe artifacts/windows/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-windows
+          path: artifacts/windows/
+          if-no-files-found: error
+
+  build-macos:
+    name: macOS (universal editor + encrypted templates)
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+    steps:
+      - name: Validate encryption key secret
+        shell: bash
+        run: |
+          if [ -z "${SCRIPT_AES256_ENCRYPTION_KEY}" ]; then
+            echo "::error::Missing secret SCRIPT_AES256_ENCRYPTION_KEY (must be 64 hex chars)."
+            exit 1
+          fi
+          if ! [[ "${SCRIPT_AES256_ENCRYPTION_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::SCRIPT_AES256_ENCRYPTION_KEY must be a 256-bit key in hex format (64 chars)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Build x86_64
+        shell: bash
+        run: |
+          scons platform=macos arch=x86_64 target=editor dev_mode=yes module_text_server_fb_enabled=yes vulkan=no accesskit=no
+          scons platform=macos arch=x86_64 target=template_debug dev_mode=yes module_text_server_fb_enabled=yes vulkan=no accesskit=no
+          scons platform=macos arch=x86_64 target=template_release dev_mode=yes module_text_server_fb_enabled=yes vulkan=no accesskit=no
+
+      - name: Build arm64
+        shell: bash
+        run: |
+          scons platform=macos arch=arm64 target=editor dev_mode=yes module_text_server_fb_enabled=yes vulkan=no accesskit=no
+          scons platform=macos arch=arm64 target=template_debug dev_mode=yes module_text_server_fb_enabled=yes vulkan=no accesskit=no
+          scons platform=macos arch=arm64 target=template_release dev_mode=yes module_text_server_fb_enabled=yes vulkan=no accesskit=no
+
+      - name: Merge universal binaries
+        shell: bash
+        run: |
+          lipo -create ./bin/godot.macos.editor.x86_64 ./bin/godot.macos.editor.arm64 -output ./bin/godot.macos.editor.universal
+          lipo -create ./bin/godot.macos.template_debug.x86_64 ./bin/godot.macos.template_debug.arm64 -output ./bin/godot.macos.template_debug.universal
+          lipo -create ./bin/godot.macos.template_release.x86_64 ./bin/godot.macos.template_release.arm64 -output ./bin/godot.macos.template_release.universal
+
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts/macos
+          cp ./bin/godot.macos.editor.universal artifacts/macos/
+          cp ./bin/godot.macos.template_debug.universal artifacts/macos/
+          cp ./bin/godot.macos.template_release.universal artifacts/macos/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-macos
+          path: artifacts/macos/
+          if-no-files-found: error
+
+  build-web:
+    name: Web (encrypted templates)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+      EM_VERSION: 4.0.11
+    steps:
+      - name: Validate encryption key secret
+        shell: bash
+        run: |
+          if [ -z "${SCRIPT_AES256_ENCRYPTION_KEY}" ]; then
+            echo "::error::Missing secret SCRIPT_AES256_ENCRYPTION_KEY (must be 64 hex chars)."
+            exit 1
+          fi
+          if ! [[ "${SCRIPT_AES256_ENCRYPTION_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::SCRIPT_AES256_ENCRYPTION_KEY must be a 256-bit key in hex format (64 chars)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EM_VERSION }}
+          no-cache: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Build web templates
+        shell: bash
+        run: |
+          scons platform=web target=template_debug arch=wasm64 dev_mode=yes use_closure_compiler=yes
+          scons platform=web target=template_release arch=wasm64 dev_mode=yes use_closure_compiler=yes
+
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts/web
+          cp ./bin/godot.web.template_debug.wasm64.zip artifacts/web/
+          cp ./bin/godot.web.template_release.wasm64.zip artifacts/web/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-web
+          path: artifacts/web/
+          if-no-files-found: error
+
+  package-all:
+    name: Package all artifacts into one zip
+    runs-on: ubuntu-24.04
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+      - build-web
+    timeout-minutes: 30
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Create single zip bundle
+        shell: bash
+        run: |
+          cd all-artifacts
+          zip -r ../godot-encrypted-builds-all-platforms.zip .
+
+      - name: Upload combined zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-all-platforms-zip
+          path: godot-encrypted-builds-all-platforms.zip
+          if-no-files-found: error
