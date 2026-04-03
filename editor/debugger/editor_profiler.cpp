@@ -101,6 +101,8 @@ void EditorProfiler::clear() {
 	plot_sigs.clear();
 	plot_sigs.insert("physics_frame_time");
 	plot_sigs.insert("category_frame_time");
+	plot_sigs.insert("physics_time");
+	plot_sigs.insert("process_time");
 	display_internal_profiles->set_visible(EDITOR_GET("debugger/profile_native_calls"));
 
 	updating_frame = true;
@@ -708,6 +710,7 @@ EditorProfiler::EditorProfiler() {
 	display_mode->add_item(TTRC("Average Time (ms)"));
 	display_mode->add_item(TTRC("Frame %"));
 	display_mode->add_item(TTRC("Physics Frame %"));
+	display_mode->select(DISPLAY_FRAME_PERCENT); // "Frame %" pre-selected by default
 	display_mode->connect(SceneStringName(item_selected), callable_mp(this, &EditorProfiler::_combo_changed));
 
 	hb_measure->add_child(display_mode);
@@ -803,4 +806,6 @@ EditorProfiler::EditorProfiler() {
 
 	plot_sigs.insert("physics_frame_time");
 	plot_sigs.insert("category_frame_time");
+	plot_sigs.insert("physics_time");   // Physics Time checked by default
+	plot_sigs.insert("process_time");   // Process Time checked by default
 }

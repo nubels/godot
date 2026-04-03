@@ -788,6 +788,7 @@ EditorVisualProfiler::EditorVisualProfiler() {
 	display_mode->set_accessibility_name(TTRC("Measure:"));
 	display_mode->add_item(TTRC("Frame Time (ms)"));
 	display_mode->add_item(TTRC("Frame %"));
+	display_mode->select(1); // "Frame %" pre-selected by default
 	display_mode->connect(SceneStringName(item_selected), callable_mp(this, &EditorVisualProfiler::_combo_changed));
 
 	hb_measure->add_child(display_mode);
