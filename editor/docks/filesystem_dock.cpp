@@ -1901,6 +1901,7 @@ void FileSystemDock::_duplicate_operation_confirm(const String &p_path) {
 		}
 	}
 	_try_duplicate_item(to_duplicate, p_path);
+	callable_mp(this, &FileSystemDock::_select_file).call_deferred(p_path, false, true);
 }
 
 void FileSystemDock::_move_confirm() {

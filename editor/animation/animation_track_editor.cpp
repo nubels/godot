@@ -8252,7 +8252,7 @@ AnimationTrackEditor::AnimationTrackEditor() {
 	snap_timeline->set_disabled(true);
 	snap_timeline->set_toggle_mode(true);
 	snap_timeline->set_tooltip_text(TTR("Apply snapping to timeline cursor."));
-	snap_timeline->set_pressed(EditorSettings::get_singleton()->get_project_metadata("animation_track_editor", "snap_timeline", false));
+	snap_timeline->set_pressed(EditorSettings::get_singleton()->get_project_metadata("animation_track_editor", "snap_timeline", true));
 	bottom_hf->add_child(snap_timeline);
 	snap_timeline->connect(SceneStringName(toggled), callable_mp(this, &AnimationTrackEditor::_store_snap_states).unbind(1));
 

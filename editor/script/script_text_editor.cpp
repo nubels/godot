@@ -2268,7 +2268,16 @@ static String _get_dropped_resource_as_member(const Ref<Resource> &p_resource, b
 	} else {
 		variable_name = variable_name.to_snake_case().to_upper().validate_unicode_identifier();
 	}
-	return vformat("const %s = preload(%s)", variable_name, _quote_drop_data(path));
+	StringName type_name = p_resource->get_class();
+	Ref<Script> resource_script = p_resource->get_script();
+	if (resource_script.is_valid()) {
+		StringName global_resource_script_name = resource_script->get_global_name();
+		if (!global_resource_script_name.is_empty()) {
+			type_name = global_resource_script_name;
+		}
+	}
+
+	return vformat("static var %s: %s:\n\tget:\n\t\treturn load(%s)", variable_name, type_name, _quote_drop_data(path));
 }
 
 String ScriptTextEditor::_get_dropped_resource_as_exported_member(const Ref<Resource> &p_resource, const Vector<ObjectID> &p_script_instance_obj_ids) {
@@ -2441,6 +2450,14 @@ void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data
 				}
 
 				String variable_name = String(node->get_name()).to_snake_case().validate_unicode_identifier();
+
+
+				variable_name = variable_name.replace("_2d_", "");
+				variable_name = variable_name.replace("_3d_", "");
+				variable_name = variable_name.replace("_2d", "");
+				variable_name = variable_name.replace("_3d", "");
+				variable_name = variable_name.replace("2d", "");
+				variable_name = variable_name.replace("3d", "");
 				if (use_type) {
 					StringName class_name = node->get_class_name();
 					Ref<Script> node_script = node->get_script();

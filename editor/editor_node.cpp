@@ -3412,6 +3412,13 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			if (!scene->get_scene_file_path().is_empty()) {
 				String path = scene->get_scene_file_path();
 				String root_name = EditorNode::adjust_scene_name_casing(scene->get_name());
+
+				root_name = root_name.replace("_2d_", "");
+				root_name = root_name.replace("_3d_", "");
+				root_name = root_name.replace("_2d", "");
+				root_name = root_name.replace("_3d", "");
+				root_name = root_name.replace("2d", "");
+				root_name = root_name.replace("3d", "");
 				String ext = path.get_extension().to_lower();
 				path = path.get_base_dir().path_join(root_name + "." + ext);
 
