@@ -1261,18 +1261,7 @@ void ScriptTextEditor::_breakpoint_toggled(int p_row) {
 }
 
 void ScriptTextEditor::_on_caret_moved() {
-	if (code_editor->is_previewing_navigation_change()) {
-		return;
-	}
-	int current_line = code_editor->get_text_editor()->get_caret_line();
-	if (Math::abs(current_line - previous_line) >= 10) {
-		Dictionary nav_state = get_navigation_state();
-		nav_state["row"] = previous_line;
-		nav_state["scroll_position"] = -1;
-		emit_signal(SNAME("request_save_previous_state"), nav_state);
-		store_previous_state();
-	}
-	previous_line = current_line;
+    previous_line = code_editor->get_text_editor()->get_caret_line();
 }
 
 void ScriptTextEditor::_lookup_symbol(const String &p_symbol, int p_row, int p_column) {
