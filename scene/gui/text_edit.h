@@ -447,6 +447,8 @@ private:
 
 		Point2 draw_pos;
 		bool visible = false;
+		bool after_inline_object = false;
+		bool inline_object_affinity_set = false;
 		int last_fit_x = 0;
 		int line = 0;
 		int column = 0;
@@ -680,6 +682,8 @@ private:
 	/* Input actions. */
 	void _swap_current_input_direction();
 	void _new_line(bool p_split_current = true, bool p_above = false);
+	bool _has_caret_stop_inline_object_at(int p_line, int p_column, bool *r_default_after = nullptr) const;
+	void _resolve_caret_inline_object_affinity(int p_caret);
 	void _move_caret_left(bool p_select, bool p_move_by_word = false);
 	void _move_caret_right(bool p_select, bool p_move_by_word = false);
 	void _move_caret_up(bool p_select);

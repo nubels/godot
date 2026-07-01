@@ -909,15 +909,16 @@ PackedInt32Array TextServer::shaped_text_get_line_breaks_adv(const RID &p_shaped
 					}
 					trim_next = true;
 				} else {
-					if (last_end <= line_start) {
+					const int break_end = l_gl[last_safe_break].end;
+					if (last_end <= line_start && break_end >= line_start) {
 						lines.push_back(line_start);
-						lines.push_back(l_gl[last_safe_break].end);
-						last_end = l_gl[last_safe_break].end;
+						lines.push_back(break_end);
+						last_end = break_end;
 					}
 				}
-				line_start = l_gl[cur_safe_brk].end;
+				line_start = MAX(line_start, l_gl[cur_safe_brk].end);
 				prev_safe_break = cur_safe_brk + 1;
-				while (prev_safe_break < l_size && l_gl[prev_safe_break].end == line_start) {
+				while (prev_safe_break < l_size && l_gl[prev_safe_break].end <= line_start) {
 					prev_safe_break++;
 				}
 				i = cur_safe_brk;
@@ -953,15 +954,16 @@ PackedInt32Array TextServer::shaped_text_get_line_breaks_adv(const RID &p_shaped
 						}
 						trim_next = true;
 					} else {
-						if (last_end <= line_start) {
+						const int break_end = l_gl[i].end;
+						if (last_end <= line_start && break_end >= line_start) {
 							lines.push_back(line_start);
-							lines.push_back(l_gl[i].end);
-							last_end = l_gl[i].end;
+							lines.push_back(break_end);
+							last_end = break_end;
 						}
 					}
-					line_start = l_gl[cur_safe_brk].end;
+					line_start = MAX(line_start, l_gl[cur_safe_brk].end);
 					prev_safe_break = cur_safe_brk + 1;
-					while (prev_safe_break < l_size && l_gl[prev_safe_break].end == line_start) {
+					while (prev_safe_break < l_size && l_gl[prev_safe_break].end <= line_start) {
 						prev_safe_break++;
 					}
 					last_safe_break = -1;
@@ -1095,18 +1097,19 @@ PackedInt32Array TextServer::shaped_text_get_line_breaks(const RID &p_shaped, do
 					}
 					trim_next = true;
 				} else {
-					if (last_end <= line_start) {
+					const int break_end = l_gl[last_safe_break].end;
+					if (last_end <= line_start && break_end >= line_start) {
 						lines.push_back(line_start);
-						lines.push_back(l_gl[last_safe_break].end);
+						lines.push_back(break_end);
 						if (p_width > indent && i > indent_end) {
 							l_width = p_width - indent;
 						}
-						last_end = l_gl[last_safe_break].end;
+						last_end = break_end;
 					}
 				}
-				line_start = l_gl[cur_safe_brk].end;
+				line_start = MAX(line_start, l_gl[cur_safe_brk].end);
 				prev_safe_break = cur_safe_brk + 1;
-				while (prev_safe_break < l_size && l_gl[prev_safe_break].end == line_start) {
+				while (prev_safe_break < l_size && l_gl[prev_safe_break].end <= line_start) {
 					prev_safe_break++;
 				}
 				i = cur_safe_brk;
@@ -1138,18 +1141,19 @@ PackedInt32Array TextServer::shaped_text_get_line_breaks(const RID &p_shaped, do
 							cur_safe_brk = i;
 						}
 					} else {
-						if (last_end <= line_start) {
+						const int break_end = l_gl[i].end;
+						if (last_end <= line_start && break_end >= line_start) {
 							lines.push_back(line_start);
-							lines.push_back(l_gl[i].end);
+							lines.push_back(break_end);
 							if (p_width > indent && i > indent_end) {
 								l_width = p_width - indent;
 							}
-							last_end = l_gl[i].end;
+							last_end = break_end;
 						}
 					}
-					line_start = l_gl[cur_safe_brk].end;
+					line_start = MAX(line_start, l_gl[cur_safe_brk].end);
 					prev_safe_break = cur_safe_brk + 1;
-					while (prev_safe_break < l_size && l_gl[prev_safe_break].end == line_start) {
+					while (prev_safe_break < l_size && l_gl[prev_safe_break].end <= line_start) {
 						prev_safe_break++;
 					}
 					last_safe_break = -1;

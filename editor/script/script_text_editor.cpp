@@ -53,6 +53,8 @@
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/split_container.h"
 
+static Node *_find_node_for_script(Node *p_base, Node *p_current, const Ref<Script> &p_script);
+
 void ConnectionInfoDialog::ok_pressed() {
 }
 
@@ -419,10 +421,14 @@ bool ScriptTextEditor::_is_valid_color_info(const Dictionary &p_info) {
 	return true;
 }
 
-Array ScriptTextEditor::_inline_object_parse(const String &p_text) {
+bool ScriptTextEditor::_is_valid_inlay_hint_info(const Dictionary &p_info) {
+	return p_info.get_valid("inlay_hint").get_type() == Variant::STRING;
+}
+
+Array ScriptTextEditor::_inline_object_parse(int p_line, const String &p_text) {
 	Array result;
 	int i_end_previous = 0;
-	int i_start = p_text.find("Color");
+	int i_start = inline_color_picker_enabled ? p_text.find("Color") : -1;
 
 	while (i_start != -1) {
 		// Ignore words that just have "Color" in them.
@@ -524,6 +530,54 @@ Array ScriptTextEditor::_inline_object_parse(const String &p_text) {
 		i_end_previous = MAX(i_end_previous, i_start);
 		i_start = p_text.find("Color", i_start + 1);
 	}
+
+	if (inlay_hints_enabled && p_line >= 0 && p_line < inlay_hint_source_lines.size() && inlay_hints.has(p_line)) {
+		CodeEdit *text_edit = code_editor->get_text_editor();
+		const Ref<Font> font = text_edit->get_theme_font(SceneStringName(font));
+		const int font_size = text_edit->get_theme_font_size(SceneStringName(font_size));
+		const String &analyzed_text = inlay_hint_source_lines[p_line];
+		int common_prefix = 0;
+		while (common_prefix < analyzed_text.length() && common_prefix < p_text.length() && analyzed_text[common_prefix] == p_text[common_prefix]) {
+			common_prefix++;
+		}
+		int common_suffix = 0;
+		while (common_suffix < analyzed_text.length() - common_prefix && common_suffix < p_text.length() - common_prefix && analyzed_text[analyzed_text.length() - common_suffix - 1] == p_text[p_text.length() - common_suffix - 1]) {
+			common_suffix++;
+		}
+		const int analyzed_change_end = analyzed_text.length() - common_suffix;
+		const int column_delta = p_text.length() - analyzed_text.length();
+		for (const ScriptLanguage::InlayHint &hint : inlay_hints[p_line]) {
+			int hint_column = hint.column;
+			if (hint_column > common_prefix) {
+				if (hint_column >= analyzed_change_end) {
+					hint_column += column_delta;
+				} else {
+					continue;
+				}
+			}
+			if (hint_column < 0 || hint_column > p_text.length()) {
+				continue;
+			}
+			bool is_placeholder = hint.is_placeholder;
+			if (hint_column < p_text.length() && (p_text[hint_column] == ')' || p_text[hint_column] == ',')) {
+				is_placeholder = true;
+			}
+			Dictionary hint_info;
+			hint_info["column"] = hint_column;
+			hint_info["inlay_hint"] = hint.label;
+			hint_info["clickable"] = false;
+			hint_info["caret_stop"] = true;
+			hint_info["caret_default_after"] = is_placeholder;
+			const float hint_width = font->get_string_size(hint.label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 6 * EDSCALE;
+			hint_info["width"] = hint_width;
+
+			int insert_at = 0;
+			while (insert_at < result.size() && int(Dictionary(result[insert_at])["column"]) < hint_column) {
+				insert_at++;
+			}
+			result.insert(insert_at, hint_info);
+		}
+	}
 	return result;
 }
 
@@ -537,6 +591,18 @@ void ScriptTextEditor::_inline_object_draw(const Dictionary &p_info, const Rect2
 		RS::get_singleton()->canvas_item_add_rect(text_ci, p_rect.grow(-3), Color(1, 1, 1));
 		color_alpha_texture->draw_rect(text_ci, col_rect);
 		RS::get_singleton()->canvas_item_add_rect(text_ci, col_rect, Color(p_info["color"]));
+	} else if (_is_valid_inlay_hint_info(p_info)) {
+		if (p_rect.size.x <= 0) {
+			return;
+		}
+		CodeEdit *text_edit = code_editor->get_text_editor();
+		const Ref<Font> font = text_edit->get_theme_font(SceneStringName(font));
+		const int font_size = text_edit->get_theme_font_size(SceneStringName(font_size));
+		const float font_height = font->get_height(font_size);
+		const Vector2 draw_position = p_rect.position + Vector2(3 * EDSCALE, (p_rect.size.y - font_height) / 2.0 + font->get_ascent(font_size) + EDSCALE);
+		Color hint_color = text_edit->get_theme_color(SNAME("font_readonly_color"));
+		hint_color.a *= 0.7;
+		font->draw_string(text_edit->get_text_canvas_item(), draw_position, p_info["inlay_hint"], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, hint_color);
 	}
 }
 
@@ -570,6 +636,36 @@ void ScriptTextEditor::_inline_object_handle_click(const Dictionary &p_info, con
 
 		inline_color_popup->popup(Rect2(pop_x, pop_y, 0, 0));
 	}
+}
+
+void ScriptTextEditor::_update_inline_object_handlers() {
+	if (inline_color_picker_enabled || inlay_hints_enabled) {
+		code_editor->get_text_editor()->set_inline_object_handlers(
+				callable_mp(this, &ScriptTextEditor::_inline_object_parse),
+				callable_mp(this, &ScriptTextEditor::_inline_object_draw),
+				callable_mp(this, &ScriptTextEditor::_inline_object_handle_click));
+	} else {
+		code_editor->get_text_editor()->set_inline_object_handlers(Callable(), Callable(), Callable());
+	}
+}
+
+void ScriptTextEditor::_update_inlay_hints(const String &p_text) {
+	inlay_hints.clear();
+	inlay_hint_source_lines.clear();
+	if (inlay_hints_enabled && script.is_valid()) {
+		inlay_hint_source_lines = p_text.split("\n", true);
+		Node *base = get_tree()->get_edited_scene_root();
+		if (base) {
+			base = _find_node_for_script(base, base, script);
+		}
+
+		List<ScriptLanguage::InlayHint> hints;
+		script->get_language()->get_inlay_hints(p_text, script->get_path(), base, &hints);
+		for (const ScriptLanguage::InlayHint &hint : hints) {
+			inlay_hints[hint.line].push_back(hint);
+		}
+	}
+	_update_inline_object_handlers();
 }
 
 String ScriptTextEditor::_picker_color_stringify(const Color &p_color, COLOR_MODE p_mode) {
@@ -695,13 +791,12 @@ void ScriptTextEditor::_update_color_text() {
 
 void ScriptTextEditor::update_settings() {
 	code_editor->get_text_editor()->set_gutter_draw(connection_gutter, EDITOR_GET("text_editor/appearance/gutters/show_info_gutter"));
-	if (EDITOR_GET("text_editor/appearance/enable_inline_color_picker")) {
-		code_editor->get_text_editor()->set_inline_object_handlers(
-				callable_mp(this, &ScriptTextEditor::_inline_object_parse),
-				callable_mp(this, &ScriptTextEditor::_inline_object_draw),
-				callable_mp(this, &ScriptTextEditor::_inline_object_handle_click));
+	inline_color_picker_enabled = EDITOR_GET("text_editor/appearance/enable_inline_color_picker");
+	inlay_hints_enabled = EDITOR_GET("text_editor/appearance/enable_inlay_hints");
+	if (script.is_valid()) {
+		_update_inlay_hints(code_editor->get_text_editor()->get_text());
 	} else {
-		code_editor->get_text_editor()->set_inline_object_handlers(Callable(), Callable(), Callable());
+		_update_inline_object_handlers();
 	}
 	code_editor->update_editor_settings();
 }
@@ -901,6 +996,7 @@ void ScriptTextEditor::_validate_script() {
 		}
 		script_is_valid = true;
 	}
+	_update_inlay_hints(text);
 	_update_connected_methods();
 	_update_warnings();
 	_update_errors();

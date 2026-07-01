@@ -3855,10 +3855,257 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 	return OK;
 }
 
+void GDScriptLanguage::get_inlay_hints(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::InlayHint> *r_hints) {
+	ERR_FAIL_NULL(r_hints);
+
+	struct CallFrame {
+		bool is_call = false;
+		bool expects_argument = false;
+		int current_argument = -1;
+		int next_argument_index = 0;
+		int call_site = -1;
+	};
+	struct ArgumentPosition {
+		int line = -1;
+		int column = -1;
+		int source_column = -1;
+		String identifier;
+		int argument_index = 0;
+		bool simple_identifier = false;
+		bool empty = false;
+	};
+	struct CallSite {
+		Vector<int> arguments;
+	};
+
+	Vector<CallFrame> frames;
+	Vector<ArgumentPosition> argument_positions;
+	Vector<CallSite> call_sites;
+	GDScriptTokenizer::Token previous;
+	GDScriptTokenizer::Token before_previous;
+	GDScriptTokenizerText tokenizer;
+	tokenizer.set_source_code(p_code);
+
+	while (true) {
+		GDScriptTokenizer::Token token = tokenizer.scan();
+		if (token.type == GDScriptTokenizer::Token::TK_EOF) {
+			break;
+		}
+
+		const bool closes_frame = token.type == GDScriptTokenizer::Token::PARENTHESIS_CLOSE ||
+				token.type == GDScriptTokenizer::Token::BRACKET_CLOSE ||
+				token.type == GDScriptTokenizer::Token::BRACE_CLOSE;
+		const bool is_layout_token = token.type == GDScriptTokenizer::Token::NEWLINE || token.type == GDScriptTokenizer::Token::INDENT || token.type == GDScriptTokenizer::Token::DEDENT;
+		bool started_argument = false;
+		if (!frames.is_empty() && frames[frames.size() - 1].is_call && frames[frames.size() - 1].expects_argument) {
+			const bool is_empty_argument = token.type == GDScriptTokenizer::Token::PARENTHESIS_CLOSE;
+			if (is_empty_argument || (!closes_frame && !is_layout_token && token.type != GDScriptTokenizer::Token::COMMA)) {
+				ArgumentPosition position;
+				position.line = token.start_line - 1;
+				position.column = token.start_column - 1;
+				position.argument_index = frames[frames.size() - 1].next_argument_index;
+				position.empty = is_empty_argument;
+				position.simple_identifier = token.type == GDScriptTokenizer::Token::IDENTIFIER;
+				if (position.simple_identifier) {
+					position.identifier = token.get_identifier();
+				}
+				argument_positions.push_back(position);
+				frames.write[frames.size() - 1].current_argument = argument_positions.size() - 1;
+				call_sites.write[frames[frames.size() - 1].call_site].arguments.push_back(frames[frames.size() - 1].current_argument);
+				frames.write[frames.size() - 1].expects_argument = false;
+				started_argument = true;
+			}
+		}
+		if (!started_argument && !frames.is_empty() && frames[frames.size() - 1].is_call && frames[frames.size() - 1].current_argument >= 0 && !is_layout_token && token.type != GDScriptTokenizer::Token::COMMA && token.type != GDScriptTokenizer::Token::PARENTHESIS_CLOSE) {
+			argument_positions.write[frames[frames.size() - 1].current_argument].simple_identifier = false;
+		}
+
+		switch (token.type) {
+			case GDScriptTokenizer::Token::PARENTHESIS_OPEN: {
+				const bool follows_callable = previous.type == GDScriptTokenizer::Token::IDENTIFIER ||
+						previous.type == GDScriptTokenizer::Token::SUPER ||
+						previous.type == GDScriptTokenizer::Token::PRELOAD ||
+						previous.type == GDScriptTokenizer::Token::PARENTHESIS_CLOSE ||
+						previous.type == GDScriptTokenizer::Token::BRACKET_CLOSE;
+				const bool is_declaration = previous.type == GDScriptTokenizer::Token::IDENTIFIER &&
+						(before_previous.type == GDScriptTokenizer::Token::FUNC || before_previous.type == GDScriptTokenizer::Token::SIGNAL);
+				const bool is_call = follows_callable && !is_declaration;
+				int call_site = -1;
+				if (is_call) {
+					call_site = call_sites.size();
+					call_sites.push_back(CallSite());
+				}
+				frames.push_back({ is_call, is_call, -1, 0, call_site });
+			} break;
+			case GDScriptTokenizer::Token::BRACKET_OPEN:
+			case GDScriptTokenizer::Token::BRACE_OPEN:
+				frames.push_back({ false, false, -1, 0, -1 });
+				break;
+			case GDScriptTokenizer::Token::COMMA:
+				if (!frames.is_empty() && frames[frames.size() - 1].is_call) {
+					frames.write[frames.size() - 1].expects_argument = true;
+					frames.write[frames.size() - 1].current_argument = -1;
+					frames.write[frames.size() - 1].next_argument_index++;
+				}
+				break;
+			case GDScriptTokenizer::Token::PARENTHESIS_CLOSE:
+			case GDScriptTokenizer::Token::BRACKET_CLOSE:
+			case GDScriptTokenizer::Token::BRACE_CLOSE:
+				if (!frames.is_empty()) {
+					frames.remove_at(frames.size() - 1);
+				}
+				break;
+			default:
+				break;
+		}
+
+		if (token.type != GDScriptTokenizer::Token::NEWLINE && token.type != GDScriptTokenizer::Token::INDENT && token.type != GDScriptTokenizer::Token::DEDENT) {
+			before_previous = previous;
+			previous = token;
+		}
+	}
+
+	PackedStringArray lines = p_code.split("\n", true);
+	const int tab_size = EDITOR_GET("text_editor/behavior/indent/size");
+	for (ArgumentPosition &position : argument_positions) {
+		if (position.line < 0 || position.line >= lines.size() || position.column < 0) {
+			continue;
+		}
+
+		const String &source_line = lines[position.line];
+		int source_column = 0;
+		int visual_column = 0;
+		while (source_column < source_line.length() && visual_column < position.column) {
+			if (source_line[source_column] == '\t') {
+				visual_column += tab_size - (visual_column % tab_size);
+			} else {
+				visual_column++;
+			}
+			source_column++;
+		}
+		if (visual_column != position.column) {
+			continue;
+		}
+		position.source_column = source_column;
+	}
+
+	for (const CallSite &call_site : call_sites) {
+		int completion_argument = -1;
+		for (int i = call_site.arguments.size() - 1; i >= 0; i--) {
+			const int argument = call_site.arguments[i];
+			if (argument_positions[argument].source_column >= 0) {
+				completion_argument = argument;
+				break;
+			}
+		}
+		if (completion_argument < 0) {
+			continue;
+		}
+
+		const ArgumentPosition &completion_position = argument_positions[completion_argument];
+
+		PackedStringArray code_with_cursor_lines = lines;
+		const String &line = code_with_cursor_lines[completion_position.line];
+		code_with_cursor_lines.set(completion_position.line, line.substr(0, completion_position.source_column) + String::chr(0xFFFF) + line.substr(completion_position.source_column));
+
+		List<ScriptLanguage::CodeCompletionOption> options;
+		bool forced = false;
+		String call_hint;
+		if (complete_code(String("\n").join(code_with_cursor_lines), p_path, p_owner, &options, forced, call_hint) != OK) {
+			continue;
+		}
+
+		String signature;
+		for (const String &hint_line : call_hint.split("\n")) {
+			if (hint_line.contains_char(0xFFFF)) {
+				signature = hint_line.remove_char(0xFFFF);
+				break;
+			}
+		}
+		const int arguments_start = signature.find_char('(');
+		const int arguments_end = signature.rfind_char(')');
+		if (arguments_start < 0 || arguments_end < arguments_start) {
+			continue;
+		}
+
+		Vector<String> parameters;
+		const String arguments = signature.substr(arguments_start + 1, arguments_end - arguments_start - 1);
+		int parameter_start = 0;
+		int nesting_depth = 0;
+		char32_t quote = 0;
+		for (int i = 0; i < arguments.length(); i++) {
+			const char32_t character = arguments[i];
+			if (quote != 0) {
+				if (character == quote && (i == 0 || arguments[i - 1] != '\\')) {
+					quote = 0;
+				}
+				continue;
+			}
+			if (character == '\'' || character == '"') {
+				quote = character;
+			} else if (character == '(' || character == '[' || character == '{') {
+				nesting_depth++;
+			} else if (character == ')' || character == ']' || character == '}') {
+				nesting_depth--;
+			} else if (character == ',' && nesting_depth == 0) {
+				parameters.push_back(arguments.substr(parameter_start, i - parameter_start).strip_edges());
+				parameter_start = i + 1;
+			}
+		}
+		if (!arguments.strip_edges().is_empty()) {
+			parameters.push_back(arguments.substr(parameter_start).strip_edges());
+		}
+		for (const int argument : call_site.arguments) {
+			const ArgumentPosition &position = argument_positions[argument];
+			if (position.source_column < 0 || position.argument_index < 0 || position.argument_index >= parameters.size()) {
+				continue;
+			}
+
+			const String selected_parameter = parameters[position.argument_index];
+			if (position.empty && selected_parameter.contains_char('=')) {
+				continue;
+			}
+			int parameter_end = selected_parameter.length();
+			const int type_separator = selected_parameter.find_char(':');
+			const int default_separator = selected_parameter.find_char('=');
+			if (type_separator >= 0) {
+				parameter_end = MIN(parameter_end, type_separator);
+			}
+			if (default_separator >= 0) {
+				parameter_end = MIN(parameter_end, default_separator);
+			}
+			String parameter = selected_parameter.substr(0, parameter_end).strip_edges();
+			if (parameter.is_empty() || parameter.begins_with("...")) {
+				continue;
+			}
+			const String normalized_parameter = parameter.trim_prefix("p_");
+			if (position.simple_identifier) {
+				const String normalized_argument = position.identifier.trim_prefix("p_");
+				if (normalized_parameter == normalized_argument) {
+					continue;
+				}
+			}
+			if (normalized_parameter.is_empty()) {
+				continue;
+			}
+
+			ScriptLanguage::InlayHint hint;
+			hint.line = position.line;
+			hint.column = position.source_column;
+			hint.label = normalized_parameter + ":";
+			hint.is_placeholder = position.empty;
+			r_hints->push_back(hint);
+		}
+	}
+}
+
 #else // !TOOLS_ENABLED
 
 Error GDScriptLanguage::complete_code(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced, String &r_call_hint) {
 	return OK;
+}
+
+void GDScriptLanguage::get_inlay_hints(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::InlayHint> *r_hints) {
 }
 
 #endif // TOOLS_ENABLED

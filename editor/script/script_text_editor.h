@@ -91,6 +91,10 @@ class ScriptTextEditor : public ScriptEditorBase {
 	ColorPicker *inline_color_picker = nullptr;
 	OptionButton *inline_color_options = nullptr;
 	Ref<Texture2D> color_alpha_texture;
+	HashMap<int, Vector<ScriptLanguage::InlayHint>> inlay_hints;
+	PackedStringArray inlay_hint_source_lines;
+	bool inline_color_picker_enabled = false;
+	bool inlay_hints_enabled = false;
 
 	GotoLinePopup *goto_line_popup = nullptr;
 	ScriptEditorQuickOpen *quick_open = nullptr;
@@ -216,9 +220,12 @@ protected:
 	void _warning_clicked(const Variant &p_line);
 
 	bool _is_valid_color_info(const Dictionary &p_info);
-	Array _inline_object_parse(const String &p_text);
+	bool _is_valid_inlay_hint_info(const Dictionary &p_info);
+	Array _inline_object_parse(int p_line, const String &p_text);
 	void _inline_object_draw(const Dictionary &p_info, const Rect2 &p_rect);
 	void _inline_object_handle_click(const Dictionary &p_info, const Rect2 &p_rect);
+	void _update_inline_object_handlers();
+	void _update_inlay_hints(const String &p_text);
 	String _picker_color_stringify(const Color &p_color, COLOR_MODE p_mode);
 	void _picker_color_changed(const Color &p_color);
 	void _update_color_constructor_options();
